@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+
+<html lang="id">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+
+      content="width=device-width, initial-scale=1.0,
+
+               maximum-scale=1.0, user-scalable=no">
+
+<title>Neon Hand Tracking</title>
+
+<style>
+
+* {
+
+    box-sizing: border-box;
+
+}
+
+html, body {
+
+    margin: 0;
+
+    padding: 0;
+
+    width: 100%;
+
+    height: 100%;
+
+    overflow: hidden;
+
+    background: #05070d;
+
+    font-family: Arial, sans-serif;
+
+}
+
+#video {
+
+    display: none;
+
+}
+
+#canvas {
+
+    position: fixed;
+
+    inset: 0;
+
+    width: 100%;
+
+    height: 100%;
+
+    object-fit: cover;
+
+}
+
+#start {
+
+    position: fixed;
+
+    inset: 0;
+
+    z-index: 10;
+
+    display: flex;
+
+    flex-direction: column;
+
+    justify-content: center;
+
+    align-items: center;
+
+    text-align: center;
+
+    padding: 25px;
+
+    background:
+
+        radial-gradient(
+
+            circle at center,
+
+            #14213d 0%,
+
+            #05070d 70%
+
+        );
+
+}
+
+#start h1 {
+
+    color: white;
+
+    font-size: 30px;
+
+    margin-bottom: 10px;
+
+}
+
+#start p {
+
+    color: #aab4c8;
+
+    line-height: 1.5;
+
+    max-width: 400px;
+
+}
+
+#start button {
+
+    margin-top: 20px;
+
+    padding: 15px 25px;
+
+    border: none;
+
+    border-radius: 15px;
+
+    background: #00f5ff;
+
+    color: #001014;
+
+    font-size: 17px;
+
+    font-weight: bold;
+
+    box-shadow:
+
+        0 0 15px #00f5ff,
+
+        0 0 40px #00f5ff55;
+
+}
+
+#top {
+
+    position: fixed;
+
+    z-index: 5;
+
+    top: 15px;
+
+    left: 18px;
+
+    right: 18px;
+
+    display: flex;
+
+    justify-content: space-between;
+
+    color: white;
+
+    font-size: 14px;
+
+}
+
+#rec {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 7px;
+
+    font-weight: bold;
+
+}
+
+#redDot {
+
+    width: 9px;
+
+    height: 9px;
+
+    border-radius: 50%;
+
+    background: red;
+
+    box-shadow: 0 0 12px red;
+
+}
+
+#bottom {
+
+    position: fixed;
+
+    z-index: 5;
+
+    bottom: 15px;
+
+    left: 18px;
+
+    right: 18px;
+
+    display: flex;
+
+    justify-content: space-between;
+
+    color: #00f5ff;
+
+    font-size: 12px;
+
+}
+
+#clear {
+
+    position: fixed;
+
+    z-index: 6;
+
+    right: 15px;
+
+    bottom: 50px;
+
+    padding: 9px 14px;
+
+    color: white;
+
+    background: #ffffff18;
+
+    border: 1px solid #ffffff55;
+
+    border-radius: 10px;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<video id="video" playsinline></video>
+
+<canvas id="canvas"></canvas>
+
+<div id="start">
+
+    <h1>NEON HAND TRACKER</h1>
+
+    <p>
+
+        Izinkan kamera lalu arahkan jari telunjuk
+
+        ke kamera untuk membuat garis neon.
+
+    </p>
+
+    <button onclick="startCamera()">
+
+        📷 MULAI KAMERA
+
+    </button>
+
+</div>
+
+<div id="top">
+
+    <div id="rec">
+
+        <span id="redDot"></span>
+
+        REC
+
+    </div>
+
+    <div id="clock">
+
+        00:00:00
+
+    </div>
+
+</div>
+
+<div id="bottom">
+
+    <span>HAND TRACKING</span>
+
+    <span id="fps">
+
+        30 FPS
+
+    </span>
+
+</div>
+
+<button id="clear">
+
+    CLEAR
+
+</button>
+
+<!-- MEDIAPIPE -->
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+<script>
+
+const video =
+
+    document.getElementById("video");
+
+const canvas =
+
+    document.getElementById("canvas");
+
+const ctx =
+
+    canvas.getContext("2d");
+
+const startScreen =
+
+    document.getElementById("start");
+
+let trails = [];
+
+let lastTime = performance.now();
+
+let frameCount = 0;
+
+let fps = 0;
+
+// ============================
+
+// CANVAS
+
+// ============================
+
+function resizeCanvas() {
+
+    canvas.width =
+
+        window.innerWidth *
+
+        window.devicePixelRatio;
+
+    canvas.height =
+
+        window.innerHeight *
+
+        window.devicePixelRatio;
+
+    canvas.style.width =
+
+        window.innerWidth + "px";
+
+    canvas.style.height =
+
+        window.innerHeight + "px";
+
+    ctx.setTransform(
+
+        window.devicePixelRatio,
+
+        0,
+
+        0,
+
+        window.devicePixelRatio,
+
+        0,
+
+        0
+
+    );
+
+}
+
+resizeCanvas();
+
+window.addEventListener(
+
+    "resize",
+
+    resizeCanvas
+
+);
+
+// ============================
+
+// NEON TRAIL
+
+// ============================
+
+function drawNeonTrail(points) {
+
+    if (points.length < 2)
+
+        return;
+
+    ctx.save();
+
+    ctx.lineCap = "round";
+
+    ctx.lineJoin = "round";
+
+    // glow
+
+    ctx.shadowColor = "#00f5ff";
+
+    ctx.shadowBlur = 20;
+
+    ctx.strokeStyle =
+
+        "rgba(0,245,255,0.35)";
+
+    ctx.lineWidth = 12;
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+
+        points[0].x,
+
+        points[0].y
+
+    );
+
+    for (
+
+        let i = 1;
+
+        i < points.length;
+
+        i++
+
+    ) {
+
+        ctx.lineTo(
+
+            points[i].x,
+
+            points[i].y
+
+        );
+
+    }
+
+    ctx.stroke();
+
+    // bright line
+
+    ctx.shadowBlur = 8;
+
+    ctx.strokeStyle =
+
+        "#00f5ff";
+
+    ctx.lineWidth = 3;
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+
+        points[0].x,
+
+        points[0].y
+
+    );
+
+    for (
+
+        let i = 1;
+
+        i < points.length;
+
+        i++
+
+    ) {
+
+        ctx.lineTo(
+
+            points[i].x,
+
+            points[i].y
+
+        );
+
+    }
+
+    ctx.stroke();
+
+    ctx.restore();
+
+}
+
+// ============================
+
+// FINGERTIP
+
+// ============================
+
+function drawFinger(x, y) {
+
+    ctx.save();
+
+    // outer glow
+
+    ctx.shadowColor = "#ff304f";
+
+    ctx.shadowBlur = 20;
+
+    ctx.beginPath();
+
+    ctx.arc(
+
+        x,
+
+        y,
+
+        8,
+
+        0,
+
+        Math.PI * 2
+
+    );
+
+    ctx.fillStyle = "#ff304f";
+
+    ctx.fill();
+
+    // crosshair
+
+    ctx.shadowBlur = 0;
+
+    ctx.strokeStyle = "white";
+
+    ctx.lineWidth = 1;
+
+    ctx.beginPath();
+
+    ctx.moveTo(x - 13, y);
+
+    ctx.lineTo(x + 13, y);
+
+    ctx.moveTo(x, y - 13);
+
+    ctx.lineTo(x, y + 13);
+
+    ctx.stroke();
+
+    ctx.restore();
+
+}
+
+// ============================
+
+// MEDIAPIPE
+
+// ============================
+
+const hands =
+
+    new Hands({
+
+        locateFile: function(file) {
+
+            return (
+
+                "https://cdn.jsdelivr.net/npm/" +
+
+                "@mediapipe/hands/" +
+
+                file
+
+            );
+
+        }
+
+    });
+
+hands.setOptions({
+
+    maxNumHands: 2,
+
+    modelComplexity: 1,
+
+    minDetectionConfidence: 0.55,
+
+    minTrackingConfidence: 0.55
+
+});
+
+// ============================
+
+// HASIL TRACKING
+
+// ============================
+
+hands.onResults(function(results) {
+
+    const width =
+
+        window.innerWidth;
+
+    const height =
+
+        window.innerHeight;
+
+    ctx.clearRect(
+
+        0,
+
+        0,
+
+        width,
+
+        height
+
+    );
+
+    // mirror camera
+
+    ctx.save();
+
+    ctx.translate(width, 0);
+
+    ctx.scale(-1, 1);
+
+    ctx.drawImage(
+
+        results.image,
+
+        0,
+
+        0,
+
+        width,
+
+        height
+
+    );
+
+    ctx.restore();
+
+    // cinematic dark overlay
+
+    ctx.fillStyle =
+
+        "rgba(0,0,10,0.15)";
+
+    ctx.fillRect(
+
+        0,
+
+        0,
+
+        width,
+
+        height
+
+    );
+
+    if (
+
+        results.multiHandLandmarks &&
+
+        results.multiHandLandmarks.length
+
+    ) {
+
+        results.multiHandLandmarks.forEach(
+
+            function(landmarks, index) {
+
+                /*
+
+                 * MediaPipe landmark 8
+
+                 * = ujung jari telunjuk
+
+                 */
+
+                const finger =
+
+                    landmarks[8];
+
+                // mirror coordinate
+
+                const x =
+
+                    (1 - finger.x) *
+
+                    width;
+
+                const y =
+
+                    finger.y *
+
+                    height;
+
+                if (!trails[index]) {
+
+                    trails[index] = [];
+
+                }
+
+                trails[index].push({
+
+                    x: x,
+
+                    y: y
+
+                });
+
+                // panjang ekor
+
+                if (
+
+                    trails[index].length > 100
+
+                ) {
+
+                    trails[index].shift();
+
+                }
+
+                drawNeonTrail(
+
+                    trails[index]
+
+                );
+
+                drawFinger(
+
+                    x,
+
+                    y
+
+                );
+
+            }
+
+        );
+
+    }
+
+    else {
+
+        // perlahan menghilangkan trail
+
+        trails.forEach(function(trail) {
+
+            if (trail.length > 0) {
+
+                trail.shift();
+
+            }
+
+        });
+
+    }
+
+    // FPS
+
+    frameCount++;
+
+    const now =
+
+        performance.now();
+
+    if (
+
+        now - lastTime >= 1000
+
+    ) {
+
+        fps =
+
+            frameCount;
+
+        frameCount = 0;
+
+        lastTime = now;
+
+        document.getElementById(
+
+            "fps"
+
+        ).textContent =
+
+            fps + " FPS";
+
+    }
+
+});
+
+// ============================
+
+// START CAMERA
+
+// ============================
+
+async function startCamera() {
+
+    try {
+
+        const stream =
+
+            await navigator.mediaDevices
+
+            .getUserMedia({
+
+                video: {
+
+                    facingMode: "user",
+
+                    width: {
+
+                        ideal: 1280
+
+                    },
+
+                    height: {
+
+                        ideal: 720
+
+                    }
+
+                },
+
+                audio: false
+
+            });
+
+        video.srcObject = stream;
+
+        await video.play();
+
+        startScreen.style.display =
+
+            "none";
+
+        const camera =
+
+            new Camera(
+
+                video,
+
+                {
+
+                    onFrame:
+
+                        async function() {
+
+                            await hands.send({
+
+                                image: video
+
+                            });
+
+                        },
+
+                    width: 1280,
+
+                    height: 720
+
+                }
+
+            );
+
+        camera.start();
+
+    }
+
+    catch(error) {
+
+        alert(
+
+            "Kamera tidak bisa dibuka. " +
+
+            "Pastikan kamu menekan Allow/Izinkan."
+
+        );
+
+        console.error(error);
+
+    }
+
+}
+
+// ============================
+
+// CLEAR
+
+// ============================
+
+document
+
+    .getElementById("clear")
+
+    .onclick = function() {
+
+        trails = [];
+
+    };
+
+// ============================
+
+// CLOCK
+
+// ============================
+
+setInterval(function() {
+
+    const now =
+
+        new Date();
+
+    document.getElementById(
+
+        "clock"
+
+    ).textContent =
+
+        now.toLocaleTimeString(
+
+            "id-ID"
+
+        );
+
+}, 500);
+
+</script>
+
+</body>
+
+</html>
